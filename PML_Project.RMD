@@ -1,0 +1,90 @@
+---
+title: 'Practical Machine Learning Course Project'
+output:   html_document
+---
+## 1. Introduction
+For the purpose of this project the Random Forest method for classification was used. The choice of this method was determined by the nature of the response variable (categorical with 5 levels) and the superior performance of the Random Forest procedure over the ordinary Decision Tree algorithm.
+
+## 2. Loading the necessary packages and pre-processing the data
+
+```{r, echo = TRUE}
+library(caret)
+library(randomForest)
+set.seed(1000)
+
+training = read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+testing = read.csv( "pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+
+```
+
+First we removed the first 7 columns as irrelevant  with the current study. Then we identified and removed the columns from both original data sets having more than 50% missing values in the training set.
+
+```{r, echo = TRUE}
+training=training[,-c(1:7)] #removing vars not related with the study
+testing=testing[,-c(1:7)]
+# identifying columns in training set with more than 50% NAs
+NA.training <- sapply(colnames(training), function(x) ifelse(sum(is.na(training[, x])/nrow(training)) > 0.50, TRUE,FALSE)) 
+sum(NA.training) # number of columns to be removed
+
+training=training[,!NA.training] # clean training set
+dim(training)
+sum(complete.cases(training))
+testing=testing[,!NA.training] # clean testing set
+dim(testing)
+# last column in testing set "problem_id" was absent from the training set and being a simple case ID  it was removed from  the 
+# testing set as well
+testing = testing[,-53] # removing "problem_id" from testing set
+sum(complete.cases(testing))
+```
+As a result from the above cleaning it turned out that all NA's from both training and testing sets were removed.
+Then we checked for the presence of correlations between predictors in the training set and employed PCA to eliminate correlated predictors.
+
+```{r,echo = TRUE} 
+ind.corr=findCorrelation(cor(training[, -53]), cutoff=0.5)
+length (ind.corr) # number of highly correlated predictors
+preProc <- preProcess(training[,1:52],method="pca",thresh=.95)
+training.pca <- predict(preProc,training[,1:52]) # transforming the training set used for model fitting and cross validation
+training.pca$classe=training[,53]
+dim(training.pca)
+testing.pca <- predict(preProc,testing) # transforming the testing set for the final predictions
+```
+As a result from the PCA procedure the 52 predictors in the original training and testing sets were replaced by 26 principal components in the new data sets training.pca  and testing.pca which were used for our analyses below.
+
+## 3. Creating data sets for cross validation 
+
+For the purpose of evaluation the out of sample error we split the transformed training set training.pca in two data sets:  one for fitting the model and a second one for estimating the out of sample error:
+
+```{r,echo = TRUE} 
+inTrain = createDataPartition(y=training.pca$classe, p=0.8, list=FALSE)
+train.cv = training.pca[inTrain, ]
+test.cv = training.pca[-inTrain, ]
+dim(train.cv)
+dim(test.cv)
+```
+
+## 3. Fitting a model using Random Forest and evaluating out of sample error
+
+The model was fit by randomForest procedure by the use of train.cv data set.
+The out of sample error was evaluated by predictions from the fitted model applied on the test.cv data set.
+```{r,echo = TRUE} 
+# Random Forest
+RF.model=randomForest(classe~.,data=train.cv)
+RF.pred =  predict(RF.model, test.cv, type = "class")
+confusionMatrix(RF.pred, test.cv$classe)
+```
+From the results obtained we can estimate the out of sample error (OSE) as:
+  OSE = 1 - Accuracy = 1 - 0.98 = 0.02 or 2%
+
+
+## 4. Final predictions
+
+The final predictions were obtained from the transformed independent testing set testing.pca
+
+```{r,echo = TRUE}
+Quiz.pred= predict(RF.model, testing.pca, type = "class")
+Quiz.pred 
+```
+From the above predictions which turned out to be 95% true, we obtained that the out of sample error based on the new testing set was OSE = 5%, or 2.5 times higher than the cross validation OSE = 2% which was expected in principle.
+
+
+
